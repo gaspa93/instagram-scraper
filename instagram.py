@@ -102,23 +102,33 @@ class Instagram:
             except Exception as e:
                 self.logger.error(str(e))
 
-    def get_account_by_usenrame(self, instagram_profile):
+            return 1
+
+    def get_account_by_username(self, instagram_profile):
 
         url = 'https://www.instagram.com/' + instagram_profile
 
-        page = self.__send_request(url)
-        json_data = re.findall(r'window._sharedData = (.*?);</script>', page.text)
-        data = json.loads(json_data[0])
+        try:
+            page = self.__send_request(url)
+            json_data = re.findall(r'window._sharedData = (.*?);</script>', page.text)
+            data = json.loads(json_data[0])
 
-        u = data['entry_data']['ProfilePage'][0]['graphql']['user']
-        if u['biography'] is not None:
-            u['biography'] = filterString(u['biography'])
-        u['n_posts'] = int(re.findall(r'content=\"(.*?)\sFollowers,\s(.*?)\sFollowing,\s(.*?)\sPosts\s',
-                                           page.text.encode('utf-8'))[0][2].replace(",", "").replace(".", "").replace("k", "000"))
+            u = data['entry_data']['ProfilePage'][0]['graphql']['user']
 
-        self.db['user'].insert_one(u)
+            self.db['user'].insert_one(u)
 
-        return 1
+            return 0
+        except:
+            try:
+                error_resp = json.loads(page.text)
+                self.logger.error(error_resp)
+
+                return error_resp
+
+            except Exception as e:
+                self.logger.error(str(e))
+
+            return 1
 
     def __query_ig(self, params, headers, cookies, qtype='user'):
         posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers, cookies=cookies)
@@ -137,14 +147,14 @@ class Instagram:
         return posts, more_pages, end_cursor
 
 
-    def __get_post_data(self, posts, min_timestamp):
+    def __get_post_data(self, posts, n_to_scrape):
 
-        Nposts = 0
+        n_collected = 0
         for item in posts:
 
             id_post = bson.int64.Int64(item['node']['id'])
             last_post_collected_timestamp = item['node']['taken_at_timestamp']
-            if last_post_collected_timestamp >= min_timestamp:
+            if n_collected < n_to_scrape:
                 item_posts = {}
                 item_posts['id_post'] = id_post
 
@@ -170,18 +180,17 @@ class Instagram:
 
                 try:
                     self.db['post'].insert_one(item_posts)
-                    Nposts += 1
+                    n_collected += 1
                 except Exception as e:
                     self.logger.warn('MongoDB Error: ' + type(e).__name__)
 
             else:
                 self.logger.info('Posts collected: {}'.format(Nposts))
-                return 1
 
-        return 0
+        return n_collected
 
     # need both username and user_id to obtain the posts
-    def get_posts(self, instagram_profile, user_id, min_timestamp):
+    def get_posts(self, instagram_profile, user_id, n):
 
         cookies = {
             'rur': 'FRC',
@@ -208,10 +217,10 @@ class Instagram:
         )
 
         posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
-        stop = self.__get_post_data(posts, min_timestamp)
+        n_collected = self.__get_post_data(posts, n)
 
         # Iterate until finish
-        while more_pages and not stop:
+        while more_pages and n_collected < n:
 
             params = (
 
@@ -221,14 +230,18 @@ class Instagram:
             )
 
             posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
-            stop = self.__get_post_data(posts, min_timestamp)
+
+            # collect the delta between target number and what we have already collected
+            n = n - n_collected
+            n_collected = self.__get_post_data(posts, n)
 
             # wait before next request
             time.sleep(3)
 
-        return 1
+        return 0
 
-    def get_tag(self, instagram_tag, n_to_scrape):
+    # get posts containing a specific hashtag
+    def get_tag(self, instagram_tag, n):
 
         cookies = {
             'rur': 'FRC',
@@ -255,9 +268,9 @@ class Instagram:
         )
 
         posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
-        stop = self.__get_post_data(posts, min_timestamp)
+        n_collected = self.__get_post_data(posts, n)
 
-        while more_pages and not stop:
+        while more_pages and n_collected < n:
 
             params = (
 
@@ -268,11 +281,14 @@ class Instagram:
             )
 
             posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies, qtype='hashtag')
-            stop = self.__get_post_data(posts, min_timestamp)
+
+            # collect the delta between target number and what we have already collected
+            n = n - n_collected
+            n_collected = self.__get_post_data(posts, n)
 
             time.sleep(3)
 
-        return 1
+        return 0
 
     def __get_shared_data(self, username):
         """Fetches the user's metadata."""
@@ -285,6 +301,7 @@ class Instagram:
             except (TypeError, KeyError, IndexError):
                 pass
 
+    ## function to handle login challenge ##
     def __login_challenge(self, checkpoint_url):
         self.session.headers.update({'Referer': BASE_LOGIN_URL})
         req = self.session.get(BASE_URL[:-1] + checkpoint_url, cookies={'ig_cb': '1'})
@@ -331,7 +348,7 @@ class Instagram:
         else:
             self.logger.error('Look at login file.')
 
-    # to handle connection reset by OS
+    # function to handle connection reset by OS
     def __send_request(self, url, params=None, headers=None, cookies=None):
         while True:
             try:
