@@ -4,6 +4,8 @@ import json
 import re
 import requests
 from datetime import date, timedelta, datetime
+import logging
+import traceback
 
 # constants
 STORIES_UA = 'Instagram 9.5.2 (iPhone7,2; iPhone OS 9_3_3; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/420+'
@@ -20,12 +22,43 @@ N_POSTS = 50  #  number of posts per query
 
 class Instagram:
 
-    def __init__(self, db_client, c, logger, s=None):
+    def __init__(self, db_client, cred, s=None):
         self.db = db_client
-        # self.writer = w
-        self.login_ = c
-        self.logger = logger
+        self.login_ = cred
+        self.logger = self.__get_logger()
         self.session = s
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        if exc_type is not None:
+            traceback.print_exception(exc_type, exc_value, tb)
+
+        self.db.close()
+        self.logout()
+
+        return True
+
+    def __get_logger(self):
+        # create logger
+        logger = logging.getLogger('instagram-scraper')
+        logger.setLevel(logging.DEBUG)
+
+        # create console handler and set level to debug
+        fh = logging.FileHandler('ig-scraper.log')
+        fh.setLevel(logging.DEBUG)
+
+        # create formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+        # add formatter to ch
+        fh.setFormatter(formatter)
+
+        # add ch to logger
+        logger.addHandler(fh)
+
+        return logger
 
     def login(self):
         """Logs in to instagram."""
