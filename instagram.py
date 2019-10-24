@@ -120,14 +120,24 @@ class Instagram:
 
         return 1
 
-    def __get_post_data(self, params, headers, cookies, min_timestamp):
+    def __query_ig(self, params, headers, cookies, qtype='user'):
         posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers, cookies=cookies)
 
         posts_data = json.loads(posts_query.content)
-        more_pages = posts_data['data']['user']['edge_owner_to_timeline_media']['page_info']['has_next_page']
-        end_cursor = posts_data['data']['user']['edge_owner_to_timeline_media']['page_info']['end_cursor']
-        # total_posts = posts_data['data']['user']['edge_owner_to_timeline_media']['count']
-        posts = posts_data['data']['user']['edge_owner_to_timeline_media']['edges']
+
+        if qtype == 'user':
+            edgepar = 'edge_owner_to_timeline_media'
+        elif qtype == 'hashtag':
+            edgepar = 'edge_hashtag_to_media'
+
+        more_pages = posts_data['data'][qtype][edgepar]['page_info']['has_next_page']
+        end_cursor = posts_data['data'][qtype][edgepar]['page_info']['end_cursor']
+        posts = posts_data['data'][qtype][edgepar]['edges']
+
+        return posts, more_pages, end_cursor
+
+
+    def __get_post_data(self, posts, min_timestamp):
 
         Nposts = 0
         for item in posts:
@@ -165,15 +175,13 @@ class Instagram:
                     self.logger.warn('MongoDB Error: ' + type(e).__name__)
 
             else:
-                self.logger.info('{}: {}'.format(metadata['ig_profile'], Nposts))
-                return 0, -1
+                self.logger.info('Posts collected: {}'.format(Nposts))
+                return 1
 
-        return more_pages, end_cursor
+        return 0
 
     # need both username and user_id to obtain the posts
     def get_posts(self, instagram_profile, user_id, min_timestamp):
-
-        min_timestamp = int(datetime(2018, 11, 1).strftime('%s'))
 
         cookies = {
             'rur': 'FRC',
@@ -199,10 +207,11 @@ class Instagram:
             ('variables', '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + '}'),
         )
 
-        more_pages, end_cursor = self.__get_post_data(params, headers, cookies, min_timestamp)
+        posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
+        stop = self.__get_post_data(posts, min_timestamp)
 
         # Iterate until finish
-        while more_pages:
+        while more_pages and not stop:
 
             params = (
 
@@ -211,15 +220,15 @@ class Instagram:
                  '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + ',"after":"' + str(end_cursor) + '" }')
             )
 
-            more_pages, end_cursor = self.__get_post_data(params, headers, cookies, min_timestamp)
+            posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
+            stop = self.__get_post_data(posts, min_timestamp)
 
+            # wait before next request
             time.sleep(3)
 
         return 1
 
-    def get_tag(self, instagram_tag, target_date):
-
-        min_timestamp = int(target_date.strftime('%s'))
+    def get_tag(self, instagram_tag, n_to_scrape):
 
         cookies = {
             'rur': 'FRC',
@@ -245,64 +254,10 @@ class Instagram:
             ('variables', '{"tag_name":"' + instagram_tag + '","first":' + str(N_POSTS) + '}')
         )
 
-        posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers,
-                                   cookies=cookies)
+        posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
+        stop = self.__get_post_data(posts, min_timestamp)
 
-        posts_data = json.loads(posts_query.content)
-        more_pages = posts_data['data']['hashtag']['edge_hashtag_to_media']['page_info']['has_next_page']
-        posts = posts_data['data']['hashtag']['edge_hashtag_to_media']['edges']
-
-        posts_collected = 0
-        posts_scraped = 0
-        for item in posts:
-            posts_scraped += 1
-
-            id_post = bson.int64.Int64(item['node']['id'])
-            last_post_collected_timestamp = item['node']['taken_at_timestamp']
-
-            old_post = self.db['tag'].find_one({'id_post': id_post})
-            if last_post_collected_timestamp >= min_timestamp and old_post is None:
-                item_posts = {}
-                item_posts['id_post'] = id_post
-
-                if item['node']['edge_media_to_caption']['edges']:
-                    item_posts['caption'] = filterString(
-                        item['node']['edge_media_to_caption']['edges'][0]['node']['text'])
-                else:
-                    item_posts['caption'] = ""
-                item_posts['shortcode'] = item['node']['shortcode']
-                item_posts['link_post'] = "https://www.instagram.com/p/" + item['node']['shortcode']
-                item_posts['timestamp'] = datetime.fromtimestamp(int(item['node']['taken_at_timestamp']))
-                item_posts['date'] = str(item_posts['timestamp'])
-                item_posts['img_url'] = item['node']['display_url']
-                item_posts['id_user'] = bson.int64.Int64(item['node']['owner']['id'])
-                item_posts['comments'] = item['node']['edge_media_to_comment']['count']
-                item_posts['likes'] = item['node']['edge_liked_by']['count']
-                item_posts['is_video'] = item['node']['is_video']
-                if item['node']['is_video']:
-                    item_posts['video_count'] = item['node']['video_view_count']
-                else:
-                    item_posts['video_count'] = 0
-
-                item_posts['hashtag'] = [instagram_tag]
-
-                try:
-                    self.db['tag'].insert_one(item_posts)
-                    posts_collected = posts_collected + 1
-                except Exception as e:
-                    print 'MongoDB Error: ' + type(e).__name__
-
-            elif last_post_collected_timestamp >= min_timestamp and old_post is not None:
-                if instagram_tag not in old_post['hashtag']:
-                    res = self.db['tag'].update_one({'id_post': old_post['id_post']}, {'$push': {'hashtag': instagram_tag}}, upsert=False)
-                    self.logger.warn('Post already present: updated hashtag list')
-
-        # self.logger.info(datetime.fromtimestamp(int(item['node']['taken_at_timestamp'])).strftime('%Y-%m-%d %H:%M:%S'))
-
-        # count number of loops without any of the target timestamps
-        useless_loops = 0
-        while more_pages and useless_loops < MAX_LOOPS:
-            end_cursor = end_cursor = posts_data['data']['hashtag']['edge_hashtag_to_media']['page_info']['end_cursor']
+        while more_pages and not stop:
 
             params = (
 
@@ -312,68 +267,10 @@ class Instagram:
                      end_cursor) + '" }')
             )
 
-            posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers,
-                                       cookies=cookies)
-
-            posts_data = json.loads(posts_query.content)
-            posts = posts_data['data']['hashtag']['edge_hashtag_to_media']['edges']
-
-            found_one = False
-            for item in posts:
-                posts_scraped += 1
-
-                id_post = bson.int64.Int64(item['node']['id'])
-                last_post_collected_timestamp = item['node']['taken_at_timestamp']
-                old_post = self.db['tag'].find_one({'id_post': id_post})
-
-                if last_post_collected_timestamp >= min_timestamp and old_post is None:
-
-                    found_one = True
-
-                    item_posts = {}
-                    item_posts['id_post'] = id_post
-
-                    if item['node']['edge_media_to_caption']['edges']:
-                        item_posts['caption'] = filterString(
-                            item['node']['edge_media_to_caption']['edges'][0]['node']['text'])
-                    else:
-                        item_posts['caption'] = ""
-                    item_posts['shortcode'] = item['node']['shortcode']
-                    item_posts['link_post'] = "https://www.instagram.com/p/" + item['node']['shortcode']
-                    item_posts['timestamp'] = datetime.fromtimestamp(int(item['node']['taken_at_timestamp']))
-                    item_posts['date'] = str(item_posts['timestamp'])
-                    item_posts['img_url'] = item['node']['display_url']
-                    item_posts['id_user'] = bson.int64.Int64(item['node']['owner']['id'])
-                    item_posts['comments'] = item['node']['edge_media_to_comment']['count']
-                    item_posts['likes'] = item['node']['edge_liked_by']['count']
-                    item_posts['is_video'] = item['node']['is_video']
-                    if item['node']['is_video']:
-                        item_posts['video_count'] = item['node']['video_view_count']
-                    else:
-                        item_posts['video_count'] = 0
-
-                    item_posts['hashtag'] = [instagram_tag]
-
-                    try:
-                        self.db['tag'].insert_one(item_posts)
-                        posts_collected = posts_collected + 1
-                    except Exception as e:
-                        self.logger.warn('MongoDB Error: ' + type(e).__name__)
-
-                elif last_post_collected_timestamp >= min_timestamp and old_post is not None:
-                    if instagram_tag not in old_post['hashtag']:
-                        res = self.db['tag'].update_one({'id_post': old_post['id_post']}, {'$push': {'hashtag': instagram_tag}}, upsert=False)
-                        self.logger.warn('Post already present: updated hashtag list')
-
-            # print datetime.fromtimestamp(int(item['node']['taken_at_timestamp'])).strftime('%Y-%m-%d %H:%M:%S')
-
-            more_pages = posts_data['data']['hashtag']['edge_hashtag_to_media']['page_info']['has_next_page']
-            if not found_one:
-                useless_loops = useless_loops + 1
+            posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies, qtype='hashtag')
+            stop = self.__get_post_data(posts, min_timestamp)
 
             time.sleep(3)
-
-        self.logger.info('OFFICIAL TAG - #{}: {}'.format(instagram_tag, posts_collected))
 
         return 1
 
