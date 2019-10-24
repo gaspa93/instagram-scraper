@@ -150,7 +150,8 @@ class Instagram:
 
             self.db['user'].insert_one(u)
 
-            return 0
+            return u[]
+
         except:
             try:
                 error_resp = json.loads(page.text)
@@ -161,7 +162,7 @@ class Instagram:
             except Exception as e:
                 self.logger.error(str(e))
 
-            return 1
+            return None
 
     def __query_ig(self, params, headers, cookies, qtype='user'):
         posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers, cookies=cookies)
@@ -274,7 +275,7 @@ class Instagram:
         return 0
 
     # get posts containing a specific hashtag
-    def get_tag(self, instagram_tag, n):
+    def get_posts_by_tag(self, instagram_tag, n):
 
         cookies = {
             'rur': 'FRC',
