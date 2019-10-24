@@ -5,12 +5,12 @@ Instagram posts and user metadata scraping
 
 - Install dependencies using the requirements.txt file
 - Install MongoDB to store results
-- Provide your account credentials in the format:
-    '''
+- Provide your account credentials in JSON format:
+    ```
     {
     		"email" : "",
     		"username" : "",
     		"password" : ""
     }
-    '''
-- Scraper allows to scrape from a username (--u) or from a hashtag (--t). In both cases, the number of posts to scrape needs to be set (--N).
+    ```
+- Scraper allows to scrape from a username (`--u`) or from a hashtag (`--t`). In both cases, the number of posts to scrape needs to be set (`--N`).
