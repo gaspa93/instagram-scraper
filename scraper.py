@@ -22,7 +22,7 @@ if __name__ == '__main__':
     if args.u:
         with Instagram(client, ig_credentials) as scraper:
             uid = scraper.get_account_by_username(args.u)
-
+            print(uid)
             # scraper.login()
             # user_id and username both needed
             # scraper.get_posts(args.u, uid, args.N)

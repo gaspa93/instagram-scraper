@@ -150,7 +150,7 @@ class Instagram:
 
             self.db['user'].insert_one(u)
 
-            return u[]
+            return u['id']
 
         except:
             try:
