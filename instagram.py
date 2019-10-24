@@ -120,6 +120,56 @@ class Instagram:
 
         return 1
 
+    def __get_post_data(self, params, headers, cookies):
+        posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers, cookies=cookies)
+
+        posts_data = json.loads(posts_query.content)
+        more_pages = posts_data['data']['user']['edge_owner_to_timeline_media']['page_info']['has_next_page']
+        end_cursor = posts_data['data']['user']['edge_owner_to_timeline_media']['page_info']['end_cursor']
+        # total_posts = posts_data['data']['user']['edge_owner_to_timeline_media']['count']
+        posts = posts_data['data']['user']['edge_owner_to_timeline_media']['edges']
+
+        Nposts = 0
+        for item in posts:
+
+            id_post = bson.int64.Int64(item['node']['id'])
+            last_post_collected_timestamp = item['node']['taken_at_timestamp']
+            if last_post_collected_timestamp >= min_timestamp:
+                item_posts = {}
+                item_posts['id_post'] = id_post
+
+                if item['node']['edge_media_to_caption']['edges']:
+                    item_posts['caption'] = filterString(item['node']['edge_media_to_caption']['edges'][0]['node']['text'])
+                else:
+                    item_posts['caption'] = ""
+                item_posts['shortcode'] = item['node']['shortcode']
+                item_posts['link_post'] = "https://www.instagram.com/p/" + item['node']['shortcode']
+                item_posts['timestamp'] = datetime.fromtimestamp(int(item['node']['taken_at_timestamp']))
+                item_posts['date'] = str(item_posts['timestamp'])
+                item_posts['img_url'] = item['node']['display_url']
+                item_posts['id_user'] = bson.int64.Int64(item['node']['owner']['id'])
+                item_posts['comments'] = item['node']['edge_media_to_comment']['count']
+                item_posts['likes'] = item['node']['edge_liked_by']['count']
+                item_posts['is_video'] = item['node']['is_video']
+                if item['node']['is_video']:
+                    item_posts['video_count'] = item['node']['video_view_count']
+                else:
+                    item_posts['video_count'] = 0
+
+                item_posts['username'] = instagram_profile
+
+                try:
+                    self.db['post'].insert_one(item_posts)
+                    Nposts += 1
+                except Exception as e:
+                    self.logger.warn('MongoDB Error: ' + type(e).__name__)
+
+            else:
+                self.logger.info('{}: {}'.format(metadata['ig_profile'], Nposts))
+                return 0, -1
+
+        return more_pages, end_cursor
+
     # need both username and user_id to obtain the posts
     def get_posts(self, instagram_profile, user_id):
 
@@ -146,73 +196,13 @@ class Instagram:
         # First Query
         params = (
             ('query_id', str(queryIdPosts)),
-            ('variables', '{"id":"' + str(user_id) + '","first":' + str() + '}'),
+            ('variables', '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + '}'),
         )
 
-        posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers,
-                                   cookies=cookies)
-
-        posts_data = json.loads(posts_query.content)
-        more_pages = posts_data['data']['user']['edge_owner_to_timeline_media']['page_info']['has_next_page']
-        total_posts = posts_data['data']['user']['edge_owner_to_timeline_media']['count']
-        posts = posts_data['data']['user']['edge_owner_to_timeline_media']['edges']
-
-        # self.logger.info('Total posts: {}'.format(total_posts))
-
-        Nposts = 0
-        for item in posts:
-
-            id_post = bson.int64.Int64(item['node']['id'])
-            last_post_collected_timestamp = item['node']['taken_at_timestamp']
-            is_old_post = self.db['post'].find_one({'id_2': id_2, 'id_post': id_post})
-            if last_post_collected_timestamp >= min_timestamp and is_old_post is None:
-                item_posts = {}
-                item_posts['id_post'] = id_post
-
-                if item['node']['edge_media_to_caption']['edges']:
-                    item_posts['caption'] = filterString(
-                        item['node']['edge_media_to_caption']['edges'][0]['node']['text'])
-                else:
-                    item_posts['caption'] = ""
-                item_posts['shortcode'] = item['node']['shortcode']
-                item_posts['link_post'] = "https://www.instagram.com/p/" + item['node']['shortcode']
-                item_posts['timestamp'] = datetime.fromtimestamp(int(item['node']['taken_at_timestamp']))
-                item_posts['date'] = str(item_posts['timestamp'])
-                item_posts['img_url'] = item['node']['display_url']
-                item_posts['id_user'] = bson.int64.Int64(item['node']['owner']['id'])
-                item_posts['comments'] = item['node']['edge_media_to_comment']['count']
-                item_posts['likes'] = item['node']['edge_liked_by']['count']
-                item_posts['is_video'] = item['node']['is_video']
-                if item['node']['is_video']:
-                    item_posts['video_count'] = item['node']['video_view_count']
-                else:
-                    item_posts['video_count'] = 0
-
-                # post = (item_posts['id_post'], id_mibact, id_2, instagram_profile, item_posts['id_user'],
-                #        item_posts['video_count'], item_posts['comments'], item_posts['likes'],
-                #        item_posts['img_url'], item_posts['link_post'], item_posts["caption"],
-                #        item_posts["date"], item_posts["timestamp"], item_posts["shortcode"],
-                #        item_posts["is_video"])
-                # self.writer['content'].writerow(post)
-
-                item_posts['id_mibact'] = id_mibact
-                item_posts['id_2'] = id_2
-                item_posts['username'] = instagram_profile
-
-                try:
-                    self.db['post'].insert_one(item_posts)
-                    Nposts += 1
-                except Exception as e:
-                    self.logger.warn('MongoDB Error: ' + type(e).__name__)
-
-            else:
-                # self.logger.info('Last post collected found!')
-                self.logger.info('{}: {}'.format(metadata['ig_profile'], Nposts))
-                return 0
+        more_pages, end_cursor = self.__get_post_data(params, headers, cookies)
 
         # Iterate until finish
         while more_pages:
-            end_cursor = posts_data['data']['user']['edge_owner_to_timeline_media']['page_info']['end_cursor']
 
             params = (
 
@@ -221,61 +211,8 @@ class Instagram:
                  '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + ',"after":"' + str(end_cursor) + '" }')
             )
 
-            posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers,
-                                       cookies=cookies)
+            more_pages, end_cursor = self.__get_post_data(params, headers, cookies)
 
-            posts_data = json.loads(posts_query.content)
-            posts = posts_data['data']['user']['edge_owner_to_timeline_media']['edges']
-            for item in posts:
-                id_post = bson.int64.Int64(item['node']['id'])
-                last_post_collected_timestamp = item['node']['taken_at_timestamp']
-                is_old_post = self.db['post'].find_one({'id_2': id_2, 'id_post': id_post})
-                if last_post_collected_timestamp >= min_timestamp and is_old_post is None:  # int(item_posts['id_post']) not in old_post_ids:
-                    item_posts = {}
-                    item_posts['id_post'] = id_post
-
-                    if item['node']['edge_media_to_caption']['edges']:
-                        item_posts['caption'] = filterString(
-                            item['node']['edge_media_to_caption']['edges'][0]['node']['text'])
-                    else:
-                        item_posts['caption'] = ""
-                    item_posts['shortcode'] = item['node']['shortcode']
-                    item_posts['link_post'] = "https://www.instagram.com/p/" + item['node']['shortcode']
-                    item_posts['timestamp'] = datetime.fromtimestamp(int(item['node']['taken_at_timestamp']))
-                    item_posts['date'] = str(item_posts['timestamp'])
-                    item_posts['img_url'] = item['node']['display_url']
-                    item_posts['id_user'] = bson.int64.Int64(item['node']['owner']['id'])
-                    item_posts['comments'] = item['node']['edge_media_to_comment']['count']
-                    item_posts['likes'] = item['node']['edge_liked_by']['count']
-                    item_posts['is_video'] = item['node']['is_video']
-                    if item['node']['is_video']:
-                        item_posts['video_count'] = item['node']['video_view_count']
-                    else:
-                        item_posts['video_count'] = 0
-
-                    # post = (item_posts['id_post'], id_mibact, id_2, instagram_profile, item_posts['id_user'],
-                    #        item_posts['video_count'], item_posts['comments'], item_posts['likes'],
-                    #        item_posts['img_url'], item_posts['link_post'], item_posts["caption"],
-                    #        item_posts["date"], item_posts["timestamp"], item_posts["shortcode"],
-                    #        item_posts["is_video"])
-                    # self.writer['content'].writerow(post)
-
-                    item_posts['id_mibact'] = id_mibact
-                    item_posts['id_2'] = id_2
-                    item_posts['username'] = instagram_profile
-
-                    try:
-                        self.db['post'].insert_one(item_posts)
-                        Nposts += 1
-                    except Exception as e:
-                        print 'MongoDB Error: ' + type(e).__name__
-
-                else:
-                    #print ('Last post collected found!')
-                    self.logger.info('{}: {}'.format(metadata['ig_profile'], Nposts))
-                    return 0
-
-            more_pages = posts_data['data']['user']['edge_owner_to_timeline_media']['page_info']['has_next_page']
             time.sleep(3)
 
         return 1
