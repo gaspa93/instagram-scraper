@@ -120,7 +120,7 @@ class Instagram:
 
         return 1
 
-    def __get_post_data(self, params, headers, cookies):
+    def __get_post_data(self, params, headers, cookies, min_timestamp):
         posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers, cookies=cookies)
 
         posts_data = json.loads(posts_query.content)
@@ -171,7 +171,7 @@ class Instagram:
         return more_pages, end_cursor
 
     # need both username and user_id to obtain the posts
-    def get_posts(self, instagram_profile, user_id):
+    def get_posts(self, instagram_profile, user_id, min_timestamp):
 
         min_timestamp = int(datetime(2018, 11, 1).strftime('%s'))
 
@@ -199,7 +199,7 @@ class Instagram:
             ('variables', '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + '}'),
         )
 
-        more_pages, end_cursor = self.__get_post_data(params, headers, cookies)
+        more_pages, end_cursor = self.__get_post_data(params, headers, cookies, min_timestamp)
 
         # Iterate until finish
         while more_pages:
@@ -211,7 +211,7 @@ class Instagram:
                  '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + ',"after":"' + str(end_cursor) + '" }')
             )
 
-            more_pages, end_cursor = self.__get_post_data(params, headers, cookies)
+            more_pages, end_cursor = self.__get_post_data(params, headers, cookies, min_timestamp)
 
             time.sleep(3)
 
