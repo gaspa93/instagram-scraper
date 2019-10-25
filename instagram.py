@@ -1,4 +1,3 @@
-from dateutil.relativedelta import relativedelta
 import time
 import json
 import re
@@ -23,7 +22,8 @@ N_POSTS = 50  #  number of posts per query
 class Instagram:
 
     def __init__(self, db_client, cred, s=None):
-        self.db = db_client
+        self.client = db_client
+        self.db = db_client['instagram']
         self.login_ = cred
         self.logger = self.__get_logger()
         self.session = s
@@ -35,8 +35,8 @@ class Instagram:
         if exc_type is not None:
             traceback.print_exception(exc_type, exc_value, tb)
 
-        self.db.close()
-        self.logout()
+        self.client.close()
+        #self.logout()
 
         return True
 
@@ -147,22 +147,24 @@ class Instagram:
             data = json.loads(json_data[0])
 
             u = data['entry_data']['ProfilePage'][0]['graphql']['user']
-
-            self.db['user'].insert_one(u)
-
-            return u['id']
-
         except:
             try:
                 error_resp = json.loads(page.text)
                 self.logger.error(error_resp)
 
-                return error_resp
-
             except Exception as e:
-                self.logger.error(str(e))
+                self.logger.error('Not handled exception ' + str(e))
 
             return None
+
+        try:
+            self.db['user'].insert_one(u)
+
+            return u['id']
+        except Exception as e:
+            self.logger.error(e)
+
+
 
     def __query_ig(self, params, headers, cookies, qtype='user'):
         posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers, cookies=cookies)
