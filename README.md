@@ -13,4 +13,5 @@ Instagram posts and user metadata scraping
     		"password" : ""
     }
     ```
-- Scraper allows to scrape from a username (`--u`) or from a hashtag (`--t`). In both cases, the number of posts to scrape needs to be set (`--N`).
+
+Scraper allows to get data starting from a username (`--u`) or from a hashtag (`--t`). In both cases, the number of posts to scrape can be provided (`--N`).
