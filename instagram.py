@@ -21,13 +21,14 @@ N_POSTS = 50  #  number of posts per query
 
 class Instagram:
 
-    def __init__(self, db_client, cred, s=None):
+    def __init__(self, db_client, cred=None, s=None):
         self.client = db_client
         self.db = db_client['instagram']
         self.login_ = cred
-        self.logger = self.__get_logger()
         self.session = s
         self.logged_in = False
+        
+        self.logger = self.__get_logger()
 
     def __enter__(self):
         return self
