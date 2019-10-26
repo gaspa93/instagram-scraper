@@ -27,6 +27,7 @@ class Instagram:
         self.login_ = cred
         self.logger = self.__get_logger()
         self.session = s
+        self.logged_in = False
 
     def __enter__(self):
         return self
@@ -36,7 +37,9 @@ class Instagram:
             traceback.print_exception(exc_type, exc_value, tb)
 
         self.client.close()
-        #self.logout()
+
+        if self.logged_in:
+            self.logout()
 
         return True
 
@@ -87,6 +90,7 @@ class Instagram:
 
         if login_text.get('authenticated') and login.status_code == 200:
             self.cookies = cookies
+            self.logged_in = True
         else:
             self.logger.error('Login failed for ' + self.login_['username'])
 
@@ -156,6 +160,14 @@ class Instagram:
                 self.logger.error('Not handled exception ' + str(e))
 
             return None
+
+        # drop not used fields
+        del u['edge_mutual_followed_by']
+        del u['requested_by_viewer']
+        del u['edge_owner_to_timeline_media'] # latest posts, scraped in other method
+        del u['edge_saved_media']
+        del u['edge_media_collections']
+        del u['edge_felix_video_timeline']
 
         try:
             self.db['user'].insert_one(u)

@@ -18,9 +18,9 @@ if __name__ == '__main__':
     client = MongoClient(DB_URL)
 
     # ig account credentials (needed for get_posts method)
-    # ig_credentials = json.load(open('credentials.json', 'r'))
+    ig_credentials = json.load(open('credentials.json', 'r'))
 
-    # get user metadata and latest posts(no login needed)
+    # get user metadata (no login needed)
     if args.u:
         with Instagram(client, ig_credentials) as scraper:
             uid = scraper.get_account_by_username(args.u)
