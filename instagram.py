@@ -183,6 +183,40 @@ class Instagram:
             return []
 
 
+    # get posts containing a specific hashtag
+    # TO DO: find the parameter to send in the request to get sorted posts
+    def get_posts_by_tag(self, hashtag, first_req=False):
+
+        cookies = {
+            'rur': 'FRC',
+            'csrftoken': self.cookies['csrftoken'],
+            'mid': 'WdD8XwAEAAHvcAob7guc69duJXcG',
+            'ds_user_id': self.cookies['ds_user_id'],
+            'sessionid': self.cookies['sessionid']
+        }
+
+        # First Query
+        if first_req:
+            params = (
+                ('query_hash', QUERY_HASH),
+                ('variables', '{"tag_name":"' + hashtag + '","first":' + str(N_POSTS) + '}')
+            )
+        else:
+            params = (
+                ('query_hash', QUERY_HASH),
+                ('variables',
+                 '{"tag_name":"' + hashtag + '","first":' + str(N_POSTS) + ',"after":"' + str(self.end_cursor) + '" }')
+            )
+
+        if self.more_pages:
+            posts = self.__query_ig(params, headers, cookies, qtype='hashtag')
+
+            return self.__parse_posts(posts)
+
+        else:
+            return []
+
+
     def __query_ig(self, params, headers, cookies, qtype='user'):
         posts_query = self.__send_request(QUERY_ENDPOINT, params=params, headers=headers, cookies=cookies)
 
@@ -228,57 +262,6 @@ class Instagram:
             plist.append(item_posts)
 
         return plist
-
-
-    # get posts containing a specific hashtag
-    def get_posts_by_tag(self, instagram_tag, n):
-
-        cookies = {
-            'rur': 'FRC',
-            'csrftoken': self.cookies['csrftoken'],
-            'mid': 'WdD8XwAEAAHvcAob7guc69duJXcG',
-            'ds_user_id': self.cookies['ds_user_id'],
-            'sessionid': self.cookies['sessionid']
-        }
-
-        headers = {
-            'Host': 'www.instagram.com',
-            'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:56.0) Gecko/20100101 Firefox/56.0',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'X-Requested-With': 'XMLHttpRequest',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-        }
-
-        # First Query
-        params = (
-            ('query_hash', QUERY_HASH),
-            ('variables', '{"tag_name":"' + instagram_tag + '","first":' + str(N_POSTS) + '}')
-        )
-
-        posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
-        n_collected = self.__get_post_data(posts, n)
-
-        while more_pages and n_collected < n:
-
-            params = (
-
-                ('query_hash', QUERY_HASH),
-                ('variables',
-                 '{"tag_name":"' + instagram_tag + '","first":' + str(N_POSTS) + ',"after":"' + str(
-                     end_cursor) + '" }')
-            )
-
-            posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies, qtype='hashtag')
-
-            # collect the delta between target number and what we have already collected
-            n = n - n_collected
-            n_collected = self.__get_post_data(posts, n)
-
-            time.sleep(3)
-
-        return 0
 
 
     def __get_shared_data(self, username):
