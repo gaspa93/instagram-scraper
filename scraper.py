@@ -1,10 +1,48 @@
 from instagram import Instagram
 from datetime import datetime, timedelta
-from pymongo import MongoClient
 import argparse
 import json
 
 DB_URL = 'mongodb://localhost:27017/'
+
+def get_user_posts(scraper, u, max_posts):
+
+    user = scraper.get_account_by_username(u)
+    if scraper.login():
+        posts = scraper.get_posts(user['username'], user['id'], first_req=True)
+
+        n = len(posts)
+        currposts = posts
+        while n < max_posts and currposts != []:
+            currposts = scraper.get_posts(user['username'], user['id'])
+            posts = posts + currposts
+            n = len(posts)
+
+        scraper.logout()
+
+        return 0
+    else:
+        return 1
+
+
+def get_hashtag_posts(scraper, t, max_posts):
+
+    if scraper.login():
+        posts = scraper.get_posts_by_tag(t, first_req=True)
+
+        n = len(posts)
+        currposts = posts
+        while n < max_posts and currposts != []:
+            currposts = scraper.get_posts(user['username'], user['id'])
+            posts = posts + currposts
+            n = len(posts)
+
+        scraper.logout()
+
+        return 0
+    else:
+        return 1
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Instagram posts and user scraper.')
@@ -14,27 +52,11 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # default MongoDB connection
-    client = MongoClient(DB_URL)
-
     # ig account credentials (needed for posts, not for users data)
     ig_credentials = json.load(open('credentials.json', 'r'))
-
     scraper = Instagram(ig_credentials)
-    user = scraper.get_account_by_username(args.u)
-    print(user)
 
-    if scraper.login():
-        posts = scraper.get_posts(user['username'], user['id'], first_req=True)
-
-        n = len(posts)
-        currposts = posts
-        while n < args.N and currposts != []:
-            currposts = scraper.get_posts(user['username'], user['id'])
-            posts = posts + currposts
-            n = len(posts)
-
-        scraper.logout()
-        
+    if not args.t:
+        get_user_posts(scraper, args.u, args.N)
     else:
-        print('Login failed!')
+        get_hashtag_posts(scraper, args.t, args.N)
