@@ -25,7 +25,16 @@ if __name__ == '__main__':
     print(user)
 
     if scraper.login():
-        scraper.get_posts(user['username'], user['id'], args.N)
+        posts = scraper.get_posts(user['username'], user['id'], first_req=True)
+
+        for p in posts:
+            print(p)
+
+        posts = scraper.get_posts(user['username'], user['id'])
+
+        for p in posts:
+            print(p)
+
         scraper.logout()
     else:
         print('Login failed!')

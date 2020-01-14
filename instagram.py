@@ -4,7 +4,6 @@ import re
 import requests
 from datetime import date, timedelta, datetime
 import logging
-import traceback
 
 # constants
 BASE_URL = 'https://www.instagram.com/'
@@ -170,47 +169,35 @@ class Instagram:
         return posts_data['data'][qtype][edgepar]['edges']
 
 
-    def __get_post_data(self, posts, n_to_scrape):
+    def __parse_posts(self, posts):
 
-        n_collected = 0
+        plist = []
         for item in posts:
 
-            id_post = bson.int64.Int64(item['node']['id'])
-            last_post_collected_timestamp = item['node']['taken_at_timestamp']
-            if n_collected < n_to_scrape:
-                item_posts = {}
-                item_posts['id_post'] = id_post
+            item_posts = {}
+            item_posts['id_post'] = item['node']['id']
 
-                if item['node']['edge_media_to_caption']['edges']:
-                    item_posts['caption'] = filterString(item['node']['edge_media_to_caption']['edges'][0]['node']['text'])
-                else:
-                    item_posts['caption'] = ""
-                item_posts['shortcode'] = item['node']['shortcode']
-                item_posts['link_post'] = "https://www.instagram.com/p/" + item['node']['shortcode']
-                item_posts['timestamp'] = datetime.fromtimestamp(int(item['node']['taken_at_timestamp']))
-                item_posts['date'] = str(item_posts['timestamp'])
-                item_posts['img_url'] = item['node']['display_url']
-                item_posts['id_user'] = bson.int64.Int64(item['node']['owner']['id'])
-                item_posts['comments'] = item['node']['edge_media_to_comment']['count']
-                item_posts['likes'] = item['node']['edge_liked_by']['count']
-                item_posts['is_video'] = item['node']['is_video']
-                if item['node']['is_video']:
-                    item_posts['video_count'] = item['node']['video_view_count']
-                else:
-                    item_posts['video_count'] = 0
-
-                item_posts['username'] = instagram_profile
-
-                try:
-                    self.db['post'].insert_one(item_posts)
-                    n_collected += 1
-                except Exception as e:
-                    self.logger.warn('MongoDB Error: ' + type(e).__name__)
-
+            if item['node']['edge_media_to_caption']['edges']:
+                item_posts['caption'] = self.__filterString(item['node']['edge_media_to_caption']['edges'][0]['node']['text'])
             else:
-                self.logger.info('Posts collected: {}'.format(Nposts))
+                item_posts['caption'] = ""
+            item_posts['shortcode'] = item['node']['shortcode']
+            item_posts['link_post'] = "https://www.instagram.com/p/" + item['node']['shortcode']
+            item_posts['timestamp'] = datetime.fromtimestamp(int(item['node']['taken_at_timestamp']))
+            item_posts['date'] = str(item_posts['timestamp'])
+            item_posts['img_url'] = item['node']['display_url']
+            item_posts['id_user'] = item['node']['owner']['id']
+            item_posts['comments'] = item['node']['edge_media_to_comment']['count']
+            item_posts['likes'] = item['node']['edge_liked_by']['count']
+            item_posts['is_video'] = item['node']['is_video']
+            if item['node']['is_video']:
+                item_posts['video_count'] = item['node']['video_view_count']
+            else:
+                item_posts['video_count'] = 0
 
-        return n_collected
+            plist.append(item_posts)
+
+        return plist
 
     # need both username and user_id to obtain posts
     def get_posts(self, instagram_profile, user_id, first_req=False):
@@ -239,7 +226,7 @@ class Instagram:
         if self.more_pages:
             posts = self.__query_ig(params, headers, cookies)
 
-            return posts
+            return self.__parse_posts(posts)
 
         else:
             return []
@@ -384,3 +371,6 @@ class Instagram:
         logger.addHandler(fh)
 
         return logger
+
+    def __filterString(self, str):
+        return str.replace('\n', ' ').replace('\t', ' ')
