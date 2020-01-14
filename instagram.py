@@ -184,6 +184,7 @@ class Instagram:
 
 
     # get posts containing a specific hashtag
+    # TO DO: find the parameter to send in the request to get sorted posts
     def get_posts_by_tag(self, hashtag, first_req=False):
 
         cookies = {
