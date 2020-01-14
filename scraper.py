@@ -27,14 +27,14 @@ if __name__ == '__main__':
     if scraper.login():
         posts = scraper.get_posts(user['username'], user['id'], first_req=True)
 
-        for p in posts:
-            print(p)
-
-        posts = scraper.get_posts(user['username'], user['id'])
-
-        for p in posts:
-            print(p)
+        n = len(posts)
+        currposts = posts
+        while n < args.N and currposts != []:
+            currposts = scraper.get_posts(user['username'], user['id'])
+            posts = posts + currposts
+            n = len(posts)
 
         scraper.logout()
+        
     else:
         print('Login failed!')

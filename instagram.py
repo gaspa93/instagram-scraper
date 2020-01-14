@@ -123,10 +123,7 @@ class Instagram:
         url = BASE_URL + instagram_profile
 
         try:
-            page = self.__send_request(url)
-            json_data = re.findall(r'window._sharedData = (.*?);</script>', page.text)
-            data = json.loads(json_data[0])
-
+            data = self.__get_shared_data(instagram_profile)
             u = data['entry_data']['ProfilePage'][0]['graphql']['user']
 
         except:
@@ -151,6 +148,39 @@ class Instagram:
         del u['edge_felix_video_timeline']
 
         return u
+
+
+    # need both username and user_id to obtain posts
+    def get_posts(self, instagram_profile, user_id, first_req=False):
+
+        cookies = {
+            'rur': 'FRC',
+            'csrftoken': self.cookies['csrftoken'],
+            'mid': 'WdD8XwAEAAHvcAob7guc69duJXcG',
+            'ds_user_id': self.cookies['ds_user_id'],
+            'sessionid': self.cookies['sessionid']
+        }
+
+        # First Query
+        if first_req:
+            params = (
+                ('query_id', str(queryIdPosts)),
+                ('variables', '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + '}'),
+            )
+        else:
+            params = (
+                ('query_id', str(queryIdPosts)),
+                ('variables',
+                 '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + ',"after":"' + str(self.end_cursor) + '" }')
+            )
+
+        if self.more_pages:
+            posts = self.__query_ig(params, headers, cookies)
+
+            return self.__parse_posts(posts)
+
+        else:
+            return []
 
 
     def __query_ig(self, params, headers, cookies, qtype='user'):
@@ -199,37 +229,6 @@ class Instagram:
 
         return plist
 
-    # need both username and user_id to obtain posts
-    def get_posts(self, instagram_profile, user_id, first_req=False):
-
-        cookies = {
-            'rur': 'FRC',
-            'csrftoken': self.cookies['csrftoken'],
-            'mid': 'WdD8XwAEAAHvcAob7guc69duJXcG',
-            'ds_user_id': self.cookies['ds_user_id'],
-            'sessionid': self.cookies['sessionid']
-        }
-
-        # First Query
-        if first_req:
-            params = (
-                ('query_id', str(queryIdPosts)),
-                ('variables', '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + '}'),
-            )
-        else:
-            params = (
-                ('query_id', str(queryIdPosts)),
-                ('variables',
-                 '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + ',"after":"' + str(self.end_cursor) + '" }')
-            )
-
-        if self.more_pages:
-            posts = self.__query_ig(params, headers, cookies)
-
-            return self.__parse_posts(posts)
-
-        else:
-            return []
 
     # get posts containing a specific hashtag
     def get_posts_by_tag(self, instagram_tag, n):
