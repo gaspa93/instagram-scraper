@@ -18,12 +18,22 @@ queryIdPosts = '17880160963012870'
 QUERY_HASH = '1780c1b186e2c37de9f7da95ce41bb67'
 N_POSTS = 50  #  number of posts per query
 
+headers = {
+    'Host': 'www.instagram.com',
+    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:56.0) Gecko/20100101 Firefox/56.0',
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'X-Requested-With': 'XMLHttpRequest',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+}
+
 class Instagram:
 
     def __init__(self, cred=None):
         self.login_ = cred
         self.session = requests.Session()
-        self.logged_in = False
+        self.more_pages = True
 
         self.logger = self.__get_logger()
 
@@ -55,7 +65,7 @@ class Instagram:
 
         if login_text.get('authenticated') and login.status_code == 200:
             self.cookies = cookies
-            self.logged_in = True
+            return True
         else:
             self.logger.error('Login failed for ' + self.login_['username'])
 
@@ -154,11 +164,10 @@ class Instagram:
         elif qtype == 'hashtag':
             edgepar = 'edge_hashtag_to_media'
 
-        more_pages = posts_data['data'][qtype][edgepar]['page_info']['has_next_page']
-        end_cursor = posts_data['data'][qtype][edgepar]['page_info']['end_cursor']
-        posts = posts_data['data'][qtype][edgepar]['edges']
+        self.more_pages = posts_data['data'][qtype][edgepar]['page_info']['has_next_page']
+        self.end_cursor = posts_data['data'][qtype][edgepar]['page_info']['end_cursor']
 
-        return posts, more_pages, end_cursor
+        return posts_data['data'][qtype][edgepar]['edges']
 
 
     def __get_post_data(self, posts, n_to_scrape):
@@ -204,7 +213,7 @@ class Instagram:
         return n_collected
 
     # need both username and user_id to obtain posts
-    def get_posts(self, instagram_profile, user_id, n):
+    def get_posts(self, instagram_profile, user_id, first_req=False):
 
         cookies = {
             'rur': 'FRC',
@@ -214,46 +223,26 @@ class Instagram:
             'sessionid': self.cookies['sessionid']
         }
 
-        headers = {
-            'Host': 'www.instagram.com',
-            'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:56.0) Gecko/20100101 Firefox/56.0',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'X-Requested-With': 'XMLHttpRequest',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-        }
-
         # First Query
-        params = (
-            ('query_id', str(queryIdPosts)),
-            ('variables', '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + '}'),
-        )
-
-        posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
-        n_collected = self.__get_post_data(posts, n)
-
-        # Iterate until finish
-        while more_pages and n_collected < n:
-
+        if first_req:
             params = (
-
+                ('query_id', str(queryIdPosts)),
+                ('variables', '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + '}'),
+            )
+        else:
+            params = (
                 ('query_id', str(queryIdPosts)),
                 ('variables',
-                 '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + ',"after":"' + str(end_cursor) + '" }')
+                 '{"id":"' + str(user_id) + '","first":' + str(N_POSTS) + ',"after":"' + str(self.end_cursor) + '" }')
             )
 
-            posts, more_pages, end_cursor= self.__query_ig(params, headers, cookies)
+        if self.more_pages:
+            posts = self.__query_ig(params, headers, cookies)
 
-            # collect the delta between target number and what we have already collected
-            n = n - n_collected
-            n_collected = self.__get_post_data(posts, n)
+            return posts
 
-            # wait before next request
-            time.sleep(3)
-
-        return 0
-
+        else:
+            return []
 
     # get posts containing a specific hashtag
     def get_posts_by_tag(self, instagram_tag, n):
