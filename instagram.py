@@ -7,62 +7,26 @@ import logging
 import traceback
 
 # constants
-STORIES_UA = 'Instagram 9.5.2 (iPhone7,2; iPhone OS 9_3_3; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/420+'
 BASE_URL = 'https://www.instagram.com/'
 BASE_LOGIN_URL = BASE_URL + 'accounts/login/'
 LOGIN_URL = BASE_LOGIN_URL + 'ajax/'
 LOGOUT_URL = BASE_URL + 'accounts/logout/'
 CHROME_WIN_UA = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'
-USER_URL = BASE_URL + '{0}/?__a=1'
-USER_INFO = 'https://i.instagram.com/api/v1/users/{}/info/'
+# USER_ENDPOINT = 'https://i.instagram.com/api/v1/users/{}/info/'
+QUERY_ENDPOINT = BASE_URL + 'graphql/query/'
 queryIdPosts = '17880160963012870'
 QUERY_HASH = '1780c1b186e2c37de9f7da95ce41bb67'
 N_POSTS = 50  #  number of posts per query
 
 class Instagram:
 
-    def __init__(self, db_client, cred=None, s=None):
-        self.client = db_client
-        self.db = db_client['instagram']
+    def __init__(self, cred=None):
         self.login_ = cred
-        self.session = s
+        self.session = requests.Session()
         self.logged_in = False
-        
+
         self.logger = self.__get_logger()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, tb):
-        if exc_type is not None:
-            traceback.print_exception(exc_type, exc_value, tb)
-
-        self.client.close()
-
-        if self.logged_in:
-            self.logout()
-
-        return True
-
-    def __get_logger(self):
-        # create logger
-        logger = logging.getLogger('instagram-scraper')
-        logger.setLevel(logging.DEBUG)
-
-        # create console handler and set level to debug
-        fh = logging.FileHandler('ig-scraper.log')
-        fh.setLevel(logging.DEBUG)
-
-        # create formatter
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-        # add formatter to ch
-        fh.setFormatter(formatter)
-
-        # add ch to logger
-        logger.addHandler(fh)
-
-        return logger
 
     def login(self):
         """Logs in to instagram."""
@@ -107,6 +71,7 @@ class Instagram:
             else:
                 self.logger.error('Look at login file')
 
+
     def logout(self):
         """Logs out of instagram."""
         try:
@@ -118,19 +83,20 @@ class Instagram:
         except requests.exceptions.RequestException:
             self.logger.warn('Failed to log out.')
 
+    # not working
     def get_account_by_id(self, id_user):
 
-        url = USER_INFO.format(id_user)
+        url = USER_ENDPOINT.format(id_user)
         page = self.__send_request(url)
 
         try:
-            dataUser = json.loads(page.text)['user']
-            dataUser['id_user'] = id_user
+            u = json.loads(page.text)['user']
+            u['id_user'] = id_user
 
-            self.db['igUser'].insert_one(dataUser)
+            return u
 
-            return 0
         except:
+
             try:
                 error_resp = json.loads(page.text)
                 self.logger.error(error_resp)
@@ -138,13 +104,14 @@ class Instagram:
                 return error_resp
 
             except Exception as e:
-                self.logger.error(str(e))
+                self.logger.error('Not handled exception ' + str(e))
 
-            return 1
+            return None
+
 
     def get_account_by_username(self, instagram_profile):
 
-        url = 'https://www.instagram.com/' + instagram_profile
+        url = BASE_URL + instagram_profile
 
         try:
             page = self.__send_request(url)
@@ -152,10 +119,14 @@ class Instagram:
             data = json.loads(json_data[0])
 
             u = data['entry_data']['ProfilePage'][0]['graphql']['user']
+
         except:
+
             try:
                 error_resp = json.loads(page.text)
                 self.logger.error(error_resp)
+
+                return error_resp
 
             except Exception as e:
                 self.logger.error('Not handled exception ' + str(e))
@@ -170,17 +141,11 @@ class Instagram:
         del u['edge_media_collections']
         del u['edge_felix_video_timeline']
 
-        try:
-            self.db['user'].insert_one(u)
-
-            return u['id']
-        except Exception as e:
-            self.logger.error(e)
-
+        return u
 
 
     def __query_ig(self, params, headers, cookies, qtype='user'):
-        posts_query = self.__send_request('https://www.instagram.com/graphql/query/', params=params, headers=headers, cookies=cookies)
+        posts_query = self.__send_request(QUERY_ENDPOINT, params=params, headers=headers, cookies=cookies)
 
         posts_data = json.loads(posts_query.content)
 
@@ -238,7 +203,7 @@ class Instagram:
 
         return n_collected
 
-    # need both username and user_id to obtain the posts
+    # need both username and user_id to obtain posts
     def get_posts(self, instagram_profile, user_id, n):
 
         cookies = {
@@ -288,6 +253,7 @@ class Instagram:
             time.sleep(3)
 
         return 0
+
 
     # get posts containing a specific hashtag
     def get_posts_by_tag(self, instagram_tag, n):
@@ -339,6 +305,7 @@ class Instagram:
 
         return 0
 
+
     def __get_shared_data(self, username):
         """Fetches the user's metadata."""
         resp = self.session.get(BASE_URL + username).text
@@ -349,6 +316,7 @@ class Instagram:
                 return json.loads(shared_data)
             except (TypeError, KeyError, IndexError):
                 pass
+
 
     ## function to handle login challenge ##
     def __login_challenge(self, checkpoint_url):
@@ -397,6 +365,7 @@ class Instagram:
         else:
             self.logger.error('Look at login file.')
 
+
     # function to handle connection reset by OS
     def __send_request(self, url, params=None, headers=None, cookies=None):
         while True:
@@ -405,3 +374,24 @@ class Instagram:
             except Exception as e:
                 self.logger.warn(str(e) + ' Waiting...')
                 time.sleep(60)
+
+
+    def __get_logger(self):
+        # create logger
+        logger = logging.getLogger('instagram-scraper')
+        logger.setLevel(logging.DEBUG)
+
+        # create console handler and set level to debug
+        fh = logging.FileHandler('ig-scraper.log')
+        fh.setLevel(logging.DEBUG)
+
+        # create formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+        # add formatter to ch
+        fh.setFormatter(formatter)
+
+        # add ch to logger
+        logger.addHandler(fh)
+
+        return logger
