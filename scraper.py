@@ -3,8 +3,6 @@ from datetime import datetime, timedelta
 import argparse
 import json
 
-DB_URL = 'mongodb://localhost:27017/'
-
 def get_user_posts(scraper, u, max_posts):
 
     user = scraper.get_account_by_username(u)
